@@ -18,9 +18,9 @@
         },
         "repo_url": {
             "type": "string",
-            "title": "目标仓库Commit页面URL",
-            "description": "需要监控的Gitee仓库Commit页面地址，必须是master或main分支的commits页面。",
-            "default": "https://gitee.com/amiya-bot/amiya-bot-assets/commits/master"
+            "title": "目标仓库URL",
+            "description": "需要监控的Gitee或GitHub仓库地址。支持标准的 .git 格式地址，或 Gitee/GitHub 的 commits 页面URL，插件会自动进行转换。",
+            "default": "https://gitee.com/amiya-bot/amiya-bot-assets.git"
         }
     },
     "required": ["plugin_enabled", "check_interval_minutes", "repo_url"]

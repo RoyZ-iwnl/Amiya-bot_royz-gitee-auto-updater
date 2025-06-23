@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import asyncio
 import importlib
-import httpx
-from bs4 import BeautifulSoup
+import re
+import subprocess
 from core import AmiyaBotPluginInstance, log, send_to_console_channel, Chain
 from amiyabot.util import temp_sys_path
 
@@ -15,13 +15,12 @@ curr_dir = os.path.dirname(__file__)
 LAST_COMMIT_FILE = os.path.join(curr_dir, 'last_commit.txt')
 
 # --- 插件实例定义 ---
-# 定义一个插件实例，用于承载插件的元数据和配置
 bot = AmiyaBotPluginInstance(
     name='资源自动更新插件',
-    version='1.0',
+    version='1.1',
     plugin_id='royz-gitee-auto-updater',
     plugin_type='system',
-    description='定时检查Gitee资源仓库，自动触发更新。',
+    description='定时通过Git命令检查Gitee资源仓库，自动触发更新。',
     document=f'{curr_dir}/README.md',
     global_config_default=f'{curr_dir}/config_default.json',
     global_config_schema=f'{curr_dir}/config_schema.json'
@@ -64,36 +63,54 @@ def import_plugin_lib(module_name):
                         log.error(f"动态导入模块 {dir_name} 失败: {e}")
     return None
 
-async def get_latest_gitee_commit_hash(commit_page_url: str) -> str | None:
+async def get_latest_gitee_commit_hash(repo_page_url: str) -> str | None:
     """
-    爬取Gitee Commit页面，获取最新的Commit哈希值。
+    使用 'git ls-remote' 命令从远程仓库获取最新的Commit哈希值，无需克隆。
     """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
-    }
+    # 自动将仓库的 commits 页面 URL 转换为 .git URL
+    # 例如: https://gitee.com/amiya-bot/amiya-bot-assets/commits/master -> https://gitee.com/amiya-bot/amiya-bot-assets.git
+    git_url = re.sub(r'/commits/.*$', '.git', repo_page_url)
+    log.info(f"转换后的Git仓库地址: {git_url}")
+
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(commit_page_url, headers=headers, timeout=20)
-            response.raise_for_status()
+        # 构建 git ls-remote 命令，查询 'HEAD' 来获取默认分支的最新 commit
+        command = ['git', 'ls-remote', git_url, 'HEAD']
+        
+        # 异步执行外部命令
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        latest_commit_div = soup.select_one('div.commit')
-
-        if latest_commit_div and 'data-full-sha' in latest_commit_div.attrs:
-            commit_hash = latest_commit_div['data-full-sha']
-            return commit_hash
-        else:
-            log.warning("在Gitee页面上未找到Commit信息，可能是页面结构已改变或URL不正确。")
-            await send_to_console_channel(Chain().text("【资源自动更新】错误：无法在Gitee页面上找到Commit信息。"))
+        # 检查命令是否成功执行
+        if process.returncode != 0:
+            error_message = stderr.decode('utf-8', errors='ignore').strip()
+            log.error(f"执行 'git ls-remote' 失败 (返回码: {process.returncode}): {error_message}")
+            if "git' is not recognized" in error_message or "不是内部或外部命令" in error_message or "not found" in error_message:
+                await send_to_console_channel(Chain().text("【资源自动更新】错误：'git' 命令未找到。请确保 Git 已安装并配置在系统的 PATH 环境变量中。"))
+            else:
+                 await send_to_console_channel(Chain().text(f"【资源自动更新】错误：无法访问Git仓库: {error_message}"))
             return None
-            
-    except httpx.RequestError as e:
-        log.error(f"请求Gitee页面 '{commit_page_url}' 失败: {e}")
-        await send_to_console_channel(Chain().text(f"【资源自动更新】请求Gitee页面失败: {e}"))
+
+        # 解析命令输出，格式通常是: <commit_hash>\tHEAD
+        output = stdout.decode('utf-8').strip()
+        if not output:
+            log.warning("'git ls-remote' 命令没有返回任何输出，请检查仓库URL是否正确。")
+            return None
+        
+        commit_hash = output.split()[0]
+        return commit_hash
+
+    except FileNotFoundError:
+        log.error("命令 'git' 未找到。请确保 Git 已被安装并且其路径已添加到系统的 PATH 环境变量中。")
+        await send_to_console_channel(Chain().text("【资源自动更新】错误：'git' 命令未找到。请确保 Git 已安装并配置在系统的 PATH 环境变量中。"))
         return None
     except Exception as e:
-        log.error(f"解析Gitee页面或提取Commit时发生未知错误: {e}")
-        await send_to_console_channel(Chain().text(f"【资源自动更新】解析Gitee页面时发生未知错误: {e}"))
+        log.error(f"使用 'git ls-remote' 获取最新Commit时发生未知错误: {e}")
+        await send_to_console_channel(Chain().text(f"【资源自动更新】检查更新时发生未知错误: {e}"))
         return None
 
 
@@ -104,12 +121,10 @@ async def background_checker():
     这是一个在后台无限循环的任务，用于定时检查更新。
     它自管理循环和休眠时间，以支持动态配置。
     """
-    # 初始等待，确保AmiyaBot框架完全启动
     await asyncio.sleep(15)
     log.info("Gitee资源自动更新插件已启动后台检查任务。")
 
     while True:
-        # 在每次循环开始时获取配置，以支持动态调整
         if not bot.get_config('plugin_enabled'):
             await asyncio.sleep(60)
             continue
@@ -127,6 +142,7 @@ async def background_checker():
             log.info(f"开始检查Gitee资源更新: {repo_url}")
             
             last_commit_hash = read_last_commit()
+            # 调用基于Git的检查函数
             latest_commit_hash = await get_latest_gitee_commit_hash(repo_url)
 
             if latest_commit_hash and latest_commit_hash != last_commit_hash:
@@ -142,7 +158,6 @@ async def background_checker():
                         log.info("开始下载资源...")
                         await send_to_console_channel(Chain().text("【资源自动更新】开始下载新资源..."))
                         
-                        # 统一处理同步和异步函数
                         download_func = getattr(gamedata_module, 'download_gamedata', None)
                         if asyncio.iscoroutinefunction(download_func):
                             await download_func()
@@ -185,3 +200,4 @@ async def background_checker():
 
 # --- 插件初始化 ---
 asyncio.create_task(background_checker())
+
