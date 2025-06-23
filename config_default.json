@@ -1,0 +1,5 @@
+{
+    "plugin_enabled": true,
+    "check_interval_minutes": 30,
+    "repo_url": "https://gitee.com/amiya-bot/amiya-bot-assets/commits/master"
+}

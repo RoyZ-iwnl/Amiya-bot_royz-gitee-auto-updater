@@ -1,0 +1,27 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "Gitee资源更新检查插件配置",
+    "description": "配置插件的自动更新检查功能",
+    "properties": {
+        "plugin_enabled": {
+            "type": "boolean",
+            "title": "启用自动更新检查",
+            "description": "总开关，控制插件是否定时检查 Gitee 仓库的 Commit 更新。",
+            "default": true
+        },
+        "check_interval_minutes": {
+            "type": "integer",
+            "title": "检查频率（分钟）",
+            "description": "设置每隔多少分钟检查一次更新。建议不要设置得过于频繁（例如小于5分钟）。",
+            "default": 30
+        },
+        "repo_url": {
+            "type": "string",
+            "title": "目标仓库Commit页面URL",
+            "description": "需要监控的Gitee仓库Commit页面地址，必须是master或main分支的commits页面。",
+            "default": "https://gitee.com/amiya-bot/amiya-bot-assets/commits/master"
+        }
+    },
+    "required": ["plugin_enabled", "check_interval_minutes", "repo_url"]
+}
