@@ -5,7 +5,7 @@ import time
 import asyncio
 import importlib
 import subprocess
-from core import AmiyaBotPluginInstance, log, send_to_console_channel, Chain, GitAutomation, event_bus
+from core import AmiyaBotPluginInstance, log, send_to_console_channel, Chain, GitAutomation, event_bus, Requirement
 from core import bot as main_bot
 from core.resource.arknightsGameData import ArknightsConfig, ArknightsGameData
 from typing import Optional
@@ -21,14 +21,12 @@ bot = AmiyaBotPluginInstance(
     name='资源自动更新插件',
     version='1.4',
     plugin_id='royz-gitee-auto-updater',
-    plugin_type='system',
+    plugin_type='',
     description='定时检查Gitee资源仓库，通过直接调用核心组件进行更新和构建，绕过事件总线。',
     document=f'{curr_dir}/README.md',
     global_config_default=f'{curr_dir}/config_default.json',
-    global_config_schema=f'{curr_dir}/config_schema.json'
-    requirements=[
-        Requirement('amiyabot-arknights-gamedata')
-    ]
+    global_config_schema=f'{curr_dir}/config_schema.json',
+    requirements=[Requirement('amiyabot-arknights-gamedata', official=True)]
 )
 
 # --- 状态变量 ---
